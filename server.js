@@ -56,7 +56,7 @@ app.post("/send-notification", async (req, res) => {
   }
 });
 
-// ✅ Notify all members in a circle with GPS info
+// ✅ Notify all members in a circle with GPS info, filtering by role = "Monitoring User"
 app.post("/notify-circle-members", async (req, res) => {
   const { adminUid, title, body } = req.body;
 
@@ -87,9 +87,13 @@ app.post("/notify-circle-members", async (req, res) => {
       return res.status(404).json({ error: "No members found in this circle" });
     }
 
-    // 🚀 Send notifications in parallel
+    // 🚀 Send notifications in parallel to only Monitoring Users
     const results = await Promise.all(membersSnapshot.docs.map(async (doc) => {
       const memberUid = doc.id;
+      const memberData = doc.data();
+
+      // Skip if not a Monitoring User
+      if (memberData.role !== "Monitoring User") return null;
 
       // 🔐 Get FCM token from RTDB
       const tokenSnap = await rtdb.ref(`deviceTokens/${memberUid}`).once("value");
