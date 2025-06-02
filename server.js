@@ -22,7 +22,7 @@ const rtdb = admin.database();
 const app = express();
 app.use(bodyParser.json());
 
-// ✅ Send notification to a specific user
+// ✅ Send notification to a specific user, fetching token from RTDB
 app.post("/send-notification", async (req, res) => {
   const { userId, title, body } = req.body;
 
@@ -31,12 +31,16 @@ app.post("/send-notification", async (req, res) => {
   }
 
   try {
+    // Optional: check if user exists in Firestore
     const userDoc = await firestore.collection("users").doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const fcmToken = userDoc.data().fcmToken;
+    // Get FCM token from Realtime Database
+    const tokenSnap = await rtdb.ref(`deviceTokens/${userId}`).once("value");
+    const fcmToken = tokenSnap.val();
+
     if (!fcmToken) {
       return res.status(404).json({ error: "FCM token not found for user" });
     }
