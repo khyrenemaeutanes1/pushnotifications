@@ -62,76 +62,46 @@ app.post("/send-notification", async (req, res) => {
 
 // ✅ Notify all members in a circle with GPS info, filtering by role = "Monitoring User"
 app.post("/notify-circle-members", async (req, res) => {
-  const { adminUid, title, body } = req.body;
+  const { title, body } = req.body;
 
-  if (!adminUid || !title || !body) {
-    return res.status(400).json({ error: "Missing fields" });
+  if (!title || !body) {
+    return res.status(400).json({ error: "Missing title or body" });
   }
 
   try {
-    // 🔍 Get circle code of the admin
-    const adminDoc = await firestore.collection("users").doc(adminUid).get();
-    if (!adminDoc.exists) {
-      return res.status(404).json({ error: "Admin user not found" });
-    }
-
-    const adminData = adminDoc.data();
-    const circleCode = adminData.circleCode;
-
-    if (!circleCode) {
-      return res.status(400).json({ error: "Admin has no circleCode" });
-    }
-
-    // 👥 Get all users in the same circle
-    const membersSnapshot = await firestore.collection("users")
-      .where("joinedCircleCode", "==", circleCode)
+    // 🟡 Get all users with role = Monitoring User
+    const usersSnapshot = await firestore
+      .collection("users")
+      .where("role", "==", "Monitoring User")
       .get();
 
-    if (membersSnapshot.empty) {
-      return res.status(404).json({ error: "No members found in this circle" });
+    if (usersSnapshot.empty) {
+      return res.status(404).json({ error: "No monitoring users found" });
     }
 
-    // 🚀 Send notifications in parallel to only Monitoring Users
-    const results = await Promise.all(membersSnapshot.docs.map(async (doc) => {
-      const memberUid = doc.id;
-      const memberData = doc.data();
-
-      // Skip if not a Monitoring User
-      if (memberData.role !== "Monitoring User") return null;
-
-      // 🔐 Get FCM token from RTDB
-      const tokenSnap = await rtdb.ref(`deviceTokens/${memberUid}`).once("value");
+    const results = await Promise.all(usersSnapshot.docs.map(async (doc) => {
+      const uid = doc.id;
+      const tokenSnap = await rtdb.ref(`deviceTokens/${uid}`).once("value");
       const fcmToken = tokenSnap.val();
+
       if (!fcmToken) return null;
 
-      // 🌍 Get location
-      const locationSnap = await rtdb.ref(`GPSLocation/${memberUid}`).once("value");
-      const location = locationSnap.val() || {};
-      const latitude = location?.latitude != null ? location.latitude.toString() : "Unknown";
-      const longitude = location?.longitude != null ? location.longitude.toString() : "Unknown";
-
-      // ✉️ Build notification
-      const message = {
+      const messagePayload = {
         token: fcmToken,
         notification: {
           title,
-          body: `${body} (Lat: ${latitude}, Lon: ${longitude})`,
-        },
-        data: {
-          latitude,
-          longitude,
+          body,
         },
       };
 
-      const response = await admin.messaging().send(message);
-      console.log(`✅ Notification sent to ${memberUid}`);
-      return { memberUid, response };
+      const response = await admin.messaging().send(messagePayload);
+      console.log(`✅ Sent to ${uid}`);
+      return { uid, response };
     }));
 
-    res.status(200).json({ success: true, results: results.filter(Boolean) });
-
+    res.status(200).json({ success: true, sent: results.filter(Boolean) });
   } catch (error) {
-    console.error("❌ Error notifying members:", error);
+    console.error("🚨 Error sending notifications:", error);
     res.status(500).json({ error: error.message });
   }
 });
