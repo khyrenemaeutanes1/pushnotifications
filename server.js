@@ -20,7 +20,7 @@ const firestore = admin.firestore();
 const rtdb = admin.database();
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
 // ✅ Send notification to a specific user, fetching token from RTDB
 app.post("/send-notification", async (req, res) => {
