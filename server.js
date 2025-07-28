@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const admin = require("firebase-admin");
-const bodyParser = require("body-parser");
 
 // ✅ Clean parse of service account from .env
 const rawCredentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
@@ -17,12 +16,11 @@ admin.initializeApp({
 });
 
 const firestore = admin.firestore();
-const rtdb = admin.database();
 
 const app = express();
 app.use(express.json());
 
-// ✅ Send notification to a specific user, fetching token from RTDB
+// ✅ Send notification to a specific user, fetching token from Firestore
 app.post("/send-notification", async (req, res) => {
   const { userId, title, body } = req.body;
 
@@ -31,18 +29,15 @@ app.post("/send-notification", async (req, res) => {
   }
 
   try {
-    // Optional: check if user exists in Firestore
     const userDoc = await firestore.collection("users").doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Get FCM token from Realtime Database
-    const tokenSnap = await rtdb.ref(`deviceTokens/${userId}`).once("value");
-    const fcmToken = tokenSnap.val();
+    const fcmToken = userDoc.data()?.fcmToken;
 
     if (!fcmToken) {
-      return res.status(404).json({ error: "FCM token not found for user" });
+      return res.status(404).json({ error: "FCM token not found in Firestore" });
     }
 
     const message = {
@@ -69,7 +64,6 @@ app.post("/notify-circle-members", async (req, res) => {
   }
 
   try {
-    // 🟡 Get all users with role = Monitoring User
     const usersSnapshot = await firestore
       .collection("users")
       .where("role", "==", "Monitoring User")
@@ -81,8 +75,7 @@ app.post("/notify-circle-members", async (req, res) => {
 
     const results = await Promise.all(usersSnapshot.docs.map(async (doc) => {
       const uid = doc.id;
-      const tokenSnap = await rtdb.ref(`deviceTokens/${uid}`).once("value");
-      const fcmToken = tokenSnap.val();
+      const fcmToken = doc.data()?.fcmToken;
 
       if (!fcmToken) return null;
 
